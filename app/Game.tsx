@@ -10,6 +10,23 @@ const W = 720, H = 440, GROUND = 350, X0 = 28, GAP = 56, REF_PX = 120, ROUNDS = 
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 const fmt = (km: number) => km.toLocaleString("he-IL", { maximumFractionDigits: km < 10 ? 1 : 0 });
 const today = () => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Jerusalem" }).format(new Date()); // yyyy-mm-dd
+const yesterday = (d: string) => new Date(Date.parse(d + "T12:00:00Z") - 864e5).toISOString().slice(0, 10);
+// daily streak = consecutive days with a finished daily; shows 0 once a day is missed
+const readStreak = () => {
+  try {
+    const s = JSON.parse(localStorage.getItem("siu-streak") || "null");
+    if (s && (s.last === today() || s.last === yesterday(today()))) return s.n as number;
+  } catch {}
+  return 0;
+};
+const bumpStreak = () => {
+  try {
+    const d = today(), s = JSON.parse(localStorage.getItem("siu-streak") || "null");
+    const n = s?.last === d ? s.n : s?.last === yesterday(d) ? s.n + 1 : 1;
+    localStorage.setItem("siu-streak", JSON.stringify({ last: d, n }));
+    return n as number;
+  } catch { return 0; }
+};
 const seed = (s: string) => [...s].reduce((h, c) => Math.imul(h ^ c.charCodeAt(0), 16777619), 2166136261);
 const mulberry32 = (a: number) => () => { // small seeded PRNG: same date -> same puzzle for everyone
   a = (a + 0x6d2b79f5) | 0;
@@ -58,6 +75,7 @@ export default function Game() {
   const [t, setT] = useState(1); // animation progress 0..1 (intro while guessing, reveal after lock)
   const [grabbing, setGrabbing] = useState(false);
   const [hover, setHover] = useState(false);
+  const [streak, setStreak] = useState(0);
   const grabDy = useRef(0); // pointer-to-handle offset at grab time, so the handle doesn't jump
   const canvas = useRef<HTMLCanvasElement>(null);
   const kLock = useRef(0); // view scale at the moment of locking, so the reveal can glide from it
@@ -77,7 +95,7 @@ export default function Game() {
       const s = JSON.parse(localStorage.getItem("siu-daily") || "null");
       if (s?.day === today() && Array.isArray(s.scores)) saved = s.scores;
     } catch {}
-    setMode(m); setZoom(1); setScores(saved);
+    setMode(m); setZoom(1); setScores(saved); setStreak(readStreak());
     setPairs(pickPairs(m === "daily" ? mulberry32(seed(today())) : Math.random));
     setRound(Math.min(saved.length, ROUNDS - 1));
     setPhase(saved.length >= ROUNDS ? "done" : "guess");
@@ -150,6 +168,7 @@ export default function Game() {
     const ratio = Math.max(guess, cur.target.h) / Math.min(guess, cur.target.h);
     const next = [...scores, Math.round(100 * Math.max(0, 2 - ratio) ** 0.85)];
     if (mode === "daily") try { localStorage.setItem("siu-daily", JSON.stringify({ day: today(), scores: next })); } catch {}
+    if (mode === "daily" && next.length === ROUNDS) setStreak(bumpStreak());
     kLock.current = k;
     setScores(next); setPhase("reveal"); setZoom(1); play(900);
   };
@@ -175,6 +194,7 @@ export default function Game() {
         <p className="mt-3 text-sm text-muted">התאימו את הצללית לקנה המידה האמיתי שלה.</p>
         <p className="mt-2 font-mono text-xs tracking-wider text-muted">
           סיבוב <b className="text-foreground">{Math.min(round + 1, ROUNDS)}</b> / {ROUNDS} &nbsp; ניקוד <b className="text-foreground">{total}</b>
+          {streak > 0 && <span title="ימים רצופים באתגר היומי"> &nbsp; 🔥 <b className="text-foreground">{streak}</b></span>}
         </p>
       </header>
 
@@ -214,7 +234,7 @@ export default function Game() {
             <div dir="ltr" className="text-6xl font-extrabold tabular-nums text-yellow-300">{total}<span className="text-xl text-muted"> / {ROUNDS * 100}</span></div>
             <div className="font-mono text-sm text-muted">{scores.join(" · ")}</div>
             {mode === "daily" ? (
-              <p className="text-xs text-muted">אתגר חדש מחר · בינתיים אפשר <button className="cursor-pointer underline" onClick={() => start("free")}>לשחק חופשי</button></p>
+              <p className="text-xs text-muted">{streak > 0 && <>🔥 רצף של {streak} {streak === 1 ? "יום" : "ימים"} · </>}אתגר חדש מחר · בינתיים אפשר <button className="cursor-pointer underline" onClick={() => start("free")}>לשחק חופשי</button></p>
             ) : (
               <button className={btn} onClick={() => start("free")}>שחקו שוב</button>
             )}
@@ -225,7 +245,7 @@ export default function Game() {
       <div className="mt-4 flex items-center justify-between gap-4 border-t border-border/60 pt-4">
         <div className="text-sm text-muted">
           <div>עיר ייחוס: <b className="text-ref">{cur.ref.name}</b> (אורך צפון–דרום, לפי קנה מידה)</div>
-          <div><b className="text-accent">{cur.target.name}</b> {phase === "guess" ? "(גררו את הפינה להתאמת האורך)" : ""}</div>
+          <div><b className="text-accent">{cur.target.name}</b></div>
         </div>
         {phase === "guess" && <button className={btn} onClick={lock}>נעל תשובה</button>}
         {phase === "reveal" && <button className={btn} onClick={nextRound}>{round + 1 === ROUNDS ? "לתוצאות" : "לסיבוב הבא ←"}</button>}

@@ -6,7 +6,7 @@ A reference city is drawn at true scale. Drag to resize a second city until its 
 
 ## Play
 
-- **Daily challenge** (default): the same 5 cities for everyone each day (date in `Asia/Jerusalem`). One play per day; progress is saved in `localStorage`.
+- **Daily challenge** (default): the same 5 cities for everyone each day (date in `Asia/Jerusalem`). One play per day; progress and a 🔥 streak of consecutive finished days are saved in `localStorage` (a missed day resets it).
 - **Free play**: random cities, replay as much as you like.
 - **Controls**: drag the ⤢ corner handle of the red city to set the length, `↑ ↓ ← →` for fine adjustment, `+` / `−` to zoom.
 - **Scoring**: based on the ratio between your guess and the real length (`max/min`), ~91 points for a 10% error, 0 at 2× off.
