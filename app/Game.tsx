@@ -47,9 +47,9 @@ function pickPairs(rand: () => number) {
   return out;
 }
 
-// draw city hKm tall (km→px scale k), bottom on the ground line, left edge at ox
-function path(ctx: CanvasRenderingContext2D, c: City, k: number, ox: number, hKm: number) {
-  const s = (k * hKm) / c.h, top = GROUND - hKm * k;
+// draw city hKm tall (km→px scale k), bottom at `bottom` (the ground line by default), left edge at ox
+function path(ctx: CanvasRenderingContext2D, c: City, k: number, ox: number, hKm: number, bottom = GROUND) {
+  const s = (k * hKm) / c.h, top = bottom - hKm * k;
   ctx.beginPath();
   for (const r of c.rings) {
     r.forEach(([x, y], i) => (i ? ctx.lineTo(ox + x * s, top + y * s) : ctx.moveTo(ox + x * s, top + y * s)));
@@ -58,9 +58,10 @@ function path(ctx: CanvasRenderingContext2D, c: City, k: number, ox: number, hKm
 }
 
 // center of the ⤢ resize handle (top-right corner of the target silhouette)
-const handlePos = (c: { ref: City; target: City }, k: number, guess: number) => ({
-  x: X0 + c.ref.w * k + GAP + c.target.w * k * (guess / c.target.h) + 14,
-  y: GROUND - guess * k - 9,
+type Off = { x: number; y: number }; // how far the player has dragged the target away from its starting spot
+const handlePos = (c: { ref: City; target: City }, k: number, guess: number, off: Off) => ({
+  x: X0 + c.ref.w * k + GAP + off.x + c.target.w * k * (guess / c.target.h) + 14,
+  y: GROUND + off.y - guess * k - 9,
 });
 const HIT = 26; // grab radius in canvas px
 
@@ -74,9 +75,10 @@ export default function Game() {
   const [scores, setScores] = useState<number[]>([]);
   const [t, setT] = useState(1); // animation progress 0..1 (intro while guessing, reveal after lock)
   const [grabbing, setGrabbing] = useState(false);
-  const [hover, setHover] = useState(false);
+  const [hover, setHover] = useState<"handle" | "body" | null>(null);
+  const [off, setOff] = useState<Off>({ x: 0, y: 0 });
   const [streak, setStreak] = useState(0);
-  const grabDy = useRef(0); // pointer-to-handle offset at grab time, so the handle doesn't jump
+  const drag = useRef<{ kind: "handle" | "body"; gx: number; gy: number } | null>(null); // grab offsets so nothing jumps
   const canvas = useRef<HTMLCanvasElement>(null);
   const kLock = useRef(0); // view scale at the moment of locking, so the reveal can glide from it
   const raf = useRef(0);
@@ -103,7 +105,7 @@ export default function Game() {
   };
   useEffect(() => start("daily"), []);
   const cur = pairs[round];
-  useEffect(() => { if (cur) setGuess(cur.ref.h * 0.5); }, [cur]);
+  useEffect(() => { if (cur) { setGuess(cur.ref.h * 0.5); setOff({ x: 0, y: 0 }); } }, [cur]);
 
   const e = 1 - (1 - t) ** 3; // ease-out
   let k = 0;
@@ -139,14 +141,16 @@ export default function Game() {
     ctx.setLineDash([3, 3]); ctx.strokeStyle = "rgba(96,165,250,0.6)"; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(X0, GROUND - ref.h * k * intro); ctx.lineTo(X0 + rw, GROUND - ref.h * k * intro); ctx.stroke(); ctx.setLineDash([]);
 
-    path(ctx, target, k, ox, guess * intro); ctx.fillStyle = "#e5121f"; ctx.fill("evenodd");
+    // the player's drag offset glides back to zero on reveal so the true outline lines up with the guess
+    const f = phase === "guess" ? 1 : 1 - e, oe = { x: off.x * f, y: off.y * f }, tx = ox + oe.x, bt = GROUND + oe.y;
+    path(ctx, target, k, tx, guess * intro, bt); ctx.fillStyle = "#e5121f"; ctx.fill("evenodd");
     if (phase === "guess") {
-      const { x, y } = handlePos(cur, k, guess * intro);
-      ctx.fillStyle = `rgba(255,255,255,${hover || grabbing ? 0.2 : 0.08})`;
+      const { x, y } = handlePos(cur, k, guess * intro, oe);
+      ctx.fillStyle = `rgba(255,255,255,${hover === "handle" || drag.current?.kind === "handle" ? 0.2 : 0.08})`;
       ctx.beginPath(); ctx.arc(x, y, 13, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = "#e2e8f0"; ctx.font = "16px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("⤢", x, y + 1);
     } else {
-      path(ctx, target, k, ox, guess + (target.h - guess) * e); // true shape morphs from the guess to its real size
+      path(ctx, target, k, tx, guess + (target.h - guess) * e, bt); // true shape morphs from the guess to its real size
       ctx.fillStyle = "rgba(100,116,139,0.6)"; ctx.fill("evenodd");
     }
 
@@ -154,24 +158,38 @@ export default function Game() {
     ctx.font = `700 15px ${getComputedStyle(el).fontFamily}`; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.direction = "rtl";
     const tw = Math.max(guess * intro, phase === "guess" ? 0 : guess + (target.h - guess) * e) * k * (target.w / target.h);
     const place = (name: string, cx: number) => { const w = ctx.measureText(name).width; return { name, w, x: clamp(cx - w / 2, 8, W - w - 8) }; };
-    const a = place(ref.name, X0 + rw / 2), b = place(target.name, ox + tw / 2);
-    const clash = b.x < a.x + a.w + 12 && a.x < b.x + b.w + 12;
-    ctx.fillStyle = "#60a5fa"; ctx.fillText(a.name, a.x, GROUND + 26);
-    ctx.fillStyle = "#f87171"; ctx.fillText(b.name, b.x, GROUND + (clash ? 52 : 26));
+    const a = place(ref.name, X0 + rw / 2), b = place(target.name, tx + tw / 2);
+    const ya = GROUND + 26; let yb = Math.min(H - 12, bt + 26); // the red label follows the shape wherever it was dragged
+    if (b.x < a.x + a.w + 12 && a.x < b.x + b.w + 12 && Math.abs(yb - ya) < 24) yb = ya + 26;
+    ctx.lineWidth = 4; ctx.lineJoin = "round"; ctx.strokeStyle = "#0a0e1c"; // dark halo keeps labels readable over shapes
+    ctx.strokeText(a.name, a.x, ya); ctx.strokeText(b.name, b.x, yb);
+    ctx.fillStyle = "#60a5fa"; ctx.fillText(a.name, a.x, ya);
+    ctx.fillStyle = "#f87171"; ctx.fillText(b.name, b.x, yb);
     ctx.direction = "ltr";
-  }, [cur, k, guess, phase, e, hover, grabbing]);
+  }, [cur, k, guess, phase, e, hover, grabbing, off]);
 
   const pointer = (ev: React.PointerEvent) => {
     const r = ev.currentTarget.getBoundingClientRect();
     return { x: ((ev.clientX - r.left) / r.width) * W, y: ((ev.clientY - r.top) / r.height) * H };
   };
-  const onHandle = (ev: React.PointerEvent) => {
-    const p = pointer(ev), h = handlePos(cur, k, guess);
-    return phase === "guess" && Math.hypot(p.x - h.x, p.y - h.y) < HIT;
+  const baseX = () => X0 + cur.ref.w * k + GAP; // target's left edge before any dragging
+  const wpx = () => guess * k * (cur.target.w / cur.target.h);
+  const hit = (ev: React.PointerEvent) => { // handle wins over body
+    if (phase !== "guess") return null;
+    const p = pointer(ev), h = handlePos(cur, k, guess, off);
+    if (Math.hypot(p.x - h.x, p.y - h.y) < HIT) return "handle";
+    const x0 = baseX() + off.x, bottom = GROUND + off.y;
+    return p.x >= x0 && p.x <= x0 + wpx() && p.y >= bottom - guess * k && p.y <= bottom ? "body" : null;
   };
-  const setFromPointer = (ev: React.PointerEvent) => {
-    const y = pointer(ev).y - grabDy.current; // desired handle y
-    setGuess(Math.max(cur.target.h * 0.02, (GROUND - 9 - clamp(y, 6, GROUND - 9)) / k));
+  const dragTo = (ev: React.PointerEvent) => {
+    const p = pointer(ev), d = drag.current;
+    if (!d) return;
+    if (d.kind === "handle") { // resize, keeping the bottom edge where it is
+      const bottom = GROUND + off.y - 9;
+      setGuess(Math.max(cur.target.h * 0.02, (bottom - clamp(p.y - d.gy, 6, bottom)) / k));
+    } else { // move anywhere, but keep a bit of the shape on screen
+      setOff({ x: clamp(p.x - d.gx, 30 - wpx() - baseX(), W - 30 - baseX()), y: clamp(p.y - d.gy, 30 - GROUND, H - 8 - GROUND) });
+    }
   };
 
   const lock = () => {
@@ -222,17 +240,19 @@ export default function Game() {
 
       <div className="relative mt-3" dir="ltr">
         <canvas
-          ref={canvas} width={W} height={H} tabIndex={0} aria-label="גררו כדי לשנות את גודל העיר"
-          className={`block h-auto w-full touch-none rounded-xl border-2 border-slate-800/90 ${grabbing ? "cursor-grabbing" : hover ? "cursor-ns-resize" : "cursor-default"}`}
+          ref={canvas} width={W} height={H} tabIndex={0} aria-label="גררו את העיר האדומה כדי להזיז אותה, ואת הפינה שלה כדי לשנות גודל"
+          className={`block h-auto w-full touch-none rounded-xl border-2 border-slate-800/90 ${grabbing ? "cursor-grabbing" : hover === "handle" ? "cursor-ns-resize" : hover === "body" ? "cursor-grab" : "cursor-default"}`}
           onPointerDown={(ev) => {
-            if (!onHandle(ev)) return;
-            grabDy.current = pointer(ev).y - handlePos(cur, k, guess).y;
+            const kind = hit(ev);
+            if (!kind) return;
+            const p = pointer(ev);
+            drag.current = kind === "handle" ? { kind, gx: 0, gy: p.y - handlePos(cur, k, guess, off).y } : { kind, gx: p.x - off.x, gy: p.y - off.y };
             setGrabbing(true); ev.currentTarget.setPointerCapture(ev.pointerId);
           }}
-          onPointerMove={(ev) => (grabbing ? setFromPointer(ev) : setHover(onHandle(ev)))}
-          onPointerUp={() => setGrabbing(false)}
-          onPointerCancel={() => setGrabbing(false)}
-          onPointerLeave={() => setHover(false)}
+          onPointerMove={(ev) => (drag.current ? dragTo(ev) : setHover(hit(ev)))}
+          onPointerUp={() => { drag.current = null; setGrabbing(false); }}
+          onPointerCancel={() => { drag.current = null; setGrabbing(false); }}
+          onPointerLeave={() => setHover(null)}
           onKeyDown={(ev) => {
             if (phase !== "guess") return;
             const f = { ArrowUp: 1.04, ArrowRight: 1.04, ArrowDown: 1 / 1.04, ArrowLeft: 1 / 1.04 }[ev.key];
