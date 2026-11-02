@@ -23,14 +23,14 @@ Next.js (App Router) + Tailwind CSS v4. The whole game is a client component in 
 
 ## Data
 
-`app/cities.json` holds ~49 simplified municipal boundaries (km-space rings, y down). It is generated, not hand-edited:
+`app/cities.json` holds ~100 simplified municipal boundaries (km-space rings, y down). It is generated, not hand-edited:
 
 ```bash
 node scripts/fetch-cities.mjs                       # Nominatim -> scripts/raw.json (~1 req/s)
 node scripts/build-data.mjs scripts/raw.json        # project to km, drop fragments, simplify -> app/cities.json
 ```
 
-Edit the city list at the top of `scripts/fetch-cities.mjs` to add or remove cities.
+Edit the city list at the top of `scripts/fetch-cities.mjs` to add or remove cities. Nominatim spells some names differently (e.g. `קרית אתא` rather than `קריית אתא`), and a few places (Caesarea, Atlit) have no boundary polygon in OSM, so they cannot be included.
 
 Caveats:
 - These are **municipal jurisdiction** boundaries, not built-up areas, so desert towns (Dimona, Arad, Eilat, Mitzpe Ramon) include a lot of empty land.
