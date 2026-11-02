@@ -1,36 +1,41 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Size It Up: ערי ישראל
 
-## Getting Started
+A Hebrew (RTL) take on the "Size It Up: Geography" game from [Magnitudle](https://magnitudle.com/size-it-up/geography), using Israeli cities.
 
-First, run the development server:
+A reference city is drawn at true scale. Drag to resize a second city until its north–south length matches reality, then lock in. The true outline is revealed over your guess and you get a score out of 100.
+
+## Play
+
+- **Daily challenge** (default): the same 5 cities for everyone each day (date in `Asia/Jerusalem`). One play per day; progress is saved in `localStorage`.
+- **Free play**: random cities, replay as much as you like.
+- **Controls**: drag (or click) on the canvas to set the length, `↑ ↓ ← →` for fine adjustment, `+` / `−` to zoom.
+- **Scoring**: based on the ratio between your guess and the real length (`max/min`), ~91 points for a 10% error, 0 at 2× off.
+
+## Develop
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev      # http://localhost:3000
+npm run build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Next.js (App Router) + Tailwind CSS v4. The whole game is a client component in `app/Game.tsx`; the map is drawn on a `<canvas>`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Data
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+`app/cities.json` holds ~49 simplified municipal boundaries (km-space rings, y down). It is generated, not hand-edited:
 
-## Learn More
+```bash
+node scripts/fetch-cities.mjs                       # Nominatim -> scripts/raw.json (~1 req/s)
+node scripts/build-data.mjs scripts/raw.json        # project to km, drop fragments, simplify -> app/cities.json
+```
 
-To learn more about Next.js, take a look at the following resources:
+Edit the city list at the top of `scripts/fetch-cities.mjs` to add or remove cities.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Caveats:
+- These are **municipal jurisdiction** boundaries, not built-up areas, so desert towns (Dimona, Arad, Eilat, Mitzpe Ramon) include a lot of empty land.
+- "Length" is the north–south extent of the boundary's bounding box.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Credits
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+City boundaries © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), available under the [ODbL](https://opendatacommons.org/licenses/odbl/). Game concept and look inspired by Magnitudle's Size It Up; this is an unaffiliated fan project.
