@@ -149,6 +149,16 @@ export default function Game() {
       path(ctx, target, k, ox, guess + (target.h - guess) * e); // true shape morphs from the guess to its real size
       ctx.fillStyle = "rgba(100,116,139,0.6)"; ctx.fill("evenodd");
     }
+
+    // name labels under each silhouette, in the same color; stagger a row if they'd collide
+    ctx.font = `700 15px ${getComputedStyle(el).fontFamily}`; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.direction = "rtl";
+    const tw = Math.max(guess * intro, phase === "guess" ? 0 : guess + (target.h - guess) * e) * k * (target.w / target.h);
+    const place = (name: string, cx: number) => { const w = ctx.measureText(name).width; return { name, w, x: clamp(cx - w / 2, 8, W - w - 8) }; };
+    const a = place(ref.name, X0 + rw / 2), b = place(target.name, ox + tw / 2);
+    const clash = b.x < a.x + a.w + 12 && a.x < b.x + b.w + 12;
+    ctx.fillStyle = "#60a5fa"; ctx.fillText(a.name, a.x, GROUND + 26);
+    ctx.fillStyle = "#f87171"; ctx.fillText(b.name, b.x, GROUND + (clash ? 52 : 26));
+    ctx.direction = "ltr";
   }, [cur, k, guess, phase, e, hover, grabbing]);
 
   const pointer = (ev: React.PointerEvent) => {
@@ -198,7 +208,19 @@ export default function Game() {
         </p>
       </header>
 
-      <div className="relative mt-5" dir="ltr">
+      <div className="mt-5 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-lg font-bold">
+        <span className="flex items-baseline gap-2 text-ref">
+          <i className="size-2.5 self-center rounded-full bg-ref" />{cur.ref.name}
+          <small className="text-xs font-normal text-muted">בקנה מידה</small>
+        </span>
+        <span className="text-sm font-normal text-muted">מול</span>
+        <span className="flex items-baseline gap-2 text-accent">
+          <i className="size-2.5 self-center rounded-full bg-accent" />{cur.target.name}
+          <small className="text-xs font-normal text-muted">אורך צפון–דרום</small>
+        </span>
+      </div>
+
+      <div className="relative mt-3" dir="ltr">
         <canvas
           ref={canvas} width={W} height={H} tabIndex={0} aria-label="גררו כדי לשנות את גודל העיר"
           className={`block h-auto w-full touch-none rounded-xl border-2 border-slate-800/90 ${grabbing ? "cursor-grabbing" : hover ? "cursor-ns-resize" : "cursor-default"}`}
@@ -242,11 +264,7 @@ export default function Game() {
         )}
       </div>
 
-      <div className="mt-4 flex items-center justify-between gap-4 border-t border-border/60 pt-4">
-        <div className="text-sm text-muted">
-          <div>עיר ייחוס: <b className="text-ref">{cur.ref.name}</b> (אורך צפון–דרום, לפי קנה מידה)</div>
-          <div><b className="text-accent">{cur.target.name}</b></div>
-        </div>
+      <div className={`mt-4 flex items-center justify-center gap-4 ${phase === "done" ? "" : "border-t border-border/60 pt-4"}`}>
         {phase === "guess" && <button className={btn} onClick={lock}>נעל תשובה</button>}
         {phase === "reveal" && <button className={btn} onClick={nextRound}>{round + 1 === ROUNDS ? "לתוצאות" : "לסיבוב הבא ←"}</button>}
       </div>
