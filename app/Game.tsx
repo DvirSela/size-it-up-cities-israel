@@ -40,6 +40,13 @@ function path(ctx: CanvasRenderingContext2D, c: City, k: number, ox: number, hKm
   }
 }
 
+// center of the ⤢ resize handle (top-right corner of the target silhouette)
+const handlePos = (c: { ref: City; target: City }, k: number, guess: number) => ({
+  x: X0 + c.ref.w * k + GAP + c.target.w * k * (guess / c.target.h) + 14,
+  y: GROUND - guess * k - 9,
+});
+const HIT = 26; // grab radius in canvas px
+
 export default function Game() {
   const [mode, setMode] = useState<Mode>("daily");
   const [pairs, setPairs] = useState<ReturnType<typeof pickPairs>>([]);
@@ -50,6 +57,8 @@ export default function Game() {
   const [scores, setScores] = useState<number[]>([]);
   const [t, setT] = useState(1); // animation progress 0..1 (intro while guessing, reveal after lock)
   const [grabbing, setGrabbing] = useState(false);
+  const [hover, setHover] = useState(false);
+  const grabDy = useRef(0); // pointer-to-handle offset at grab time, so the handle doesn't jump
   const canvas = useRef<HTMLCanvasElement>(null);
   const kLock = useRef(0); // view scale at the moment of locking, so the reveal can glide from it
   const raf = useRef(0);
@@ -114,18 +123,27 @@ export default function Game() {
 
     path(ctx, target, k, ox, guess * intro); ctx.fillStyle = "#e5121f"; ctx.fill("evenodd");
     if (phase === "guess") {
-      const hx = ox + target.w * k * (guess / target.h) * intro + 14, hy = GROUND - guess * k * intro - 4;
-      ctx.fillStyle = "#cbd5e1"; ctx.font = "16px sans-serif"; ctx.textAlign = "center"; ctx.fillText("⤢", hx, hy);
+      const { x, y } = handlePos(cur, k, guess * intro);
+      ctx.fillStyle = `rgba(255,255,255,${hover || grabbing ? 0.2 : 0.08})`;
+      ctx.beginPath(); ctx.arc(x, y, 13, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#e2e8f0"; ctx.font = "16px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("⤢", x, y + 1);
     } else {
       path(ctx, target, k, ox, guess + (target.h - guess) * e); // true shape morphs from the guess to its real size
       ctx.fillStyle = "rgba(100,116,139,0.6)"; ctx.fill("evenodd");
     }
-  }, [cur, k, guess, phase, e]);
+  }, [cur, k, guess, phase, e, hover, grabbing]);
 
+  const pointer = (ev: React.PointerEvent) => {
+    const r = ev.currentTarget.getBoundingClientRect();
+    return { x: ((ev.clientX - r.left) / r.width) * W, y: ((ev.clientY - r.top) / r.height) * H };
+  };
+  const onHandle = (ev: React.PointerEvent) => {
+    const p = pointer(ev), h = handlePos(cur, k, guess);
+    return phase === "guess" && Math.hypot(p.x - h.x, p.y - h.y) < HIT;
+  };
   const setFromPointer = (ev: React.PointerEvent) => {
-    if (phase !== "guess" || !cur) return;
-    const r = ev.currentTarget.getBoundingClientRect(), y = ((ev.clientY - r.top) / r.height) * H;
-    setGuess(Math.max(cur.target.h * 0.02, (GROUND - clamp(y, 6, GROUND)) / k));
+    const y = pointer(ev).y - grabDy.current; // desired handle y
+    setGuess(Math.max(cur.target.h * 0.02, (GROUND - 9 - clamp(y, 6, GROUND - 9)) / k));
   };
 
   const lock = () => {
@@ -163,10 +181,16 @@ export default function Game() {
       <div className="relative mt-5" dir="ltr">
         <canvas
           ref={canvas} width={W} height={H} tabIndex={0} aria-label="גררו כדי לשנות את גודל העיר"
-          className={`block h-auto w-full touch-none rounded-xl border-2 border-slate-800/90 ${phase !== "guess" ? "cursor-default" : grabbing ? "cursor-grabbing" : "cursor-ns-resize"}`}
-          onPointerDown={(ev) => { setGrabbing(true); ev.currentTarget.setPointerCapture(ev.pointerId); setFromPointer(ev); }}
-          onPointerMove={(ev) => grabbing && setFromPointer(ev)}
+          className={`block h-auto w-full touch-none rounded-xl border-2 border-slate-800/90 ${grabbing ? "cursor-grabbing" : hover ? "cursor-ns-resize" : "cursor-default"}`}
+          onPointerDown={(ev) => {
+            if (!onHandle(ev)) return;
+            grabDy.current = pointer(ev).y - handlePos(cur, k, guess).y;
+            setGrabbing(true); ev.currentTarget.setPointerCapture(ev.pointerId);
+          }}
+          onPointerMove={(ev) => (grabbing ? setFromPointer(ev) : setHover(onHandle(ev)))}
           onPointerUp={() => setGrabbing(false)}
+          onPointerCancel={() => setGrabbing(false)}
+          onPointerLeave={() => setHover(false)}
           onKeyDown={(ev) => {
             if (phase !== "guess") return;
             const f = { ArrowUp: 1.04, ArrowRight: 1.04, ArrowDown: 1 / 1.04, ArrowLeft: 1 / 1.04 }[ev.key];
@@ -201,7 +225,7 @@ export default function Game() {
       <div className="mt-4 flex items-center justify-between gap-4 border-t border-border/60 pt-4">
         <div className="text-sm text-muted">
           <div>עיר ייחוס: <b className="text-ref">{cur.ref.name}</b> (אורך צפון–דרום, לפי קנה מידה)</div>
-          <div><b className="text-accent">{cur.target.name}</b> {phase === "guess" ? "(גררו להתאמת האורך)" : ""}</div>
+          <div><b className="text-accent">{cur.target.name}</b> {phase === "guess" ? "(גררו את הפינה להתאמת האורך)" : ""}</div>
         </div>
         {phase === "guess" && <button className={btn} onClick={lock}>נעל תשובה</button>}
         {phase === "reveal" && <button className={btn} onClick={nextRound}>{round + 1 === ROUNDS ? "לתוצאות" : "לסיבוב הבא ←"}</button>}
